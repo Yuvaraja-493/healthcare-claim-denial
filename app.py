@@ -12,65 +12,97 @@ st.title("🏥 Healthcare Claim Denial Prediction App")
 claims_path = os.path.join("data", "claims.csv")
 
 if os.path.exists(claims_path):
-    df = pd.read_csv(claims_path, encoding='latin1')
+    # Skip the first junk row, use 2nd row as header
+    df = pd.read_csv(claims_path, encoding="latin1", skiprows=1)
 
+    # Drop unnamed or irrelevant columns (like '#' if present)
+    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+    if "#" in df.columns:
+        df = df.drop(columns=["#"])
+
+    # Clean up currency columns (remove $ and convert to float)
+    if "Payment Amount" in df.columns:
+        df["Payment Amount"] = (
+            df["Payment Amount"].replace("[\$,]", "", regex=True).astype(float)
+        )
+    if "Balance" in df.columns:
+        df["Balance"] = (
+            df["Balance"].replace("[\$,]", "", regex=True).astype(float)
+        )
 
     st.subheader("📂 Training Data Preview")
     st.dataframe(df.head())
 
-    # Split into features and target
-    X = df.drop("Denial", axis=1)
-    y = df["Denial"]
-
-    # Train model
-    model = RandomForestClassifier(random_state=42)
-    model.fit(X, y)
-
-    st.success("✅ Model trained successfully on data/claims.csv")
-
     # ========================
-    # Denial Analysis
+    # Split into features & target
     # ========================
-    st.subheader("📊 Denial Analysis")
-    st.write(
-        df.groupby("CPT").Denial.mean().reset_index().rename(columns={"Denial": "Denial Rate"})
-    )
-    st.write(
-        df.groupby("Payer").Denial.mean().reset_index().rename(columns={"Denial": "Denial Rate"})
-    )
-    st.write(
-        df.groupby("Provider").Denial.mean().reset_index().rename(columns={"Denial": "Denial Rate"})
-    )
+    if "Denial" in df.columns:
+        X = df.drop("Denial", axis=1)
+        y = df["Denial"]
 
-    # ========================
-    # Prediction Section
-    # ========================
-    st.subheader("🔮 Predict Denials on New Data")
+        # Train model
+        model = RandomForestClassifier(random_state=42)
+        model.fit(X, y)
 
-    new_file = st.file_uploader("Upload new claims CSV file", type=["csv"])
+        st.success("✅ Model trained successfully on data/claims.csv")
 
-    if new_file:
-        new_df = pd.read_csv(new_file)
+        # ========================
+        # Denial Analysis
+        # ========================
+        st.subheader("📊 Denial Analysis")
 
-        st.subheader("📂 New Claims Data Preview")
-        st.dataframe(new_df.head())
+        for col in ["CPT Code", "Insurance Company", "Physician Name"]:
+            if col in df.columns:
+                st.write(
+                    df.groupby(col)["Denial"].mean().reset_index().rename(
+                        columns={"Denial": "Denial Rate"}
+                    )
+                )
 
-        # Predict
-        predictions = model.predict(new_df)
-        new_df["Predicted Denial"] = predictions
+        # ========================
+        # Prediction Section
+        # ========================
+        st.subheader("🔮 Predict Denials on New Data")
 
-        st.subheader("📊 Prediction Results")
-        st.dataframe(new_df)
+        new_file = st.file_uploader("Upload new claims CSV file", type=["csv"])
 
-        # Option to download results
-        csv = new_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "⬇️ Download Predictions as CSV",
-            csv,
-            "predicted_claims.csv",
-            "text/csv",
-            key="download-csv",
-        )
+        if new_file:
+            new_df = pd.read_csv(new_file, skiprows=1)
+            new_df = new_df.loc[:, ~new_df.columns.str.contains("^Unnamed")]
+            if "#" in new_df.columns:
+                new_df = new_df.drop(columns=["#"])
+
+            if "Payment Amount" in new_df.columns:
+                new_df["Payment Amount"] = (
+                    new_df["Payment Amount"].replace("[\$,]", "", regex=True).astype(float)
+                )
+            if "Balance" in new_df.columns:
+                new_df["Balance"] = (
+                    new_df["Balance"].replace("[\$,]", "", regex=True).astype(float)
+                )
+
+            st.subheader("📂 New Claims Data Preview")
+            st.dataframe(new_df.head())
+
+            # Predict
+            predictions = model.predict(new_df)
+            new_df["Predicted Denial"] = predictions
+
+            st.subheader("📊 Prediction Results")
+            st.dataframe(new_df)
+
+            # Option to download results
+            csv = new_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Download Predictions as CSV",
+                csv,
+                "predicted_claims.csv",
+                "text/csv",
+                key="download-csv",
+            )
+
+    else:
+        st.error("❌ 'Denial' column not found in data. Please include it in training dataset.")
 
 else:
     st.error("❌ Could not find data/claims.csv. Please check the path.")
