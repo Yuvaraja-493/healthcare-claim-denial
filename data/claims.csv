@@ -1,5 +1,3 @@
-,,,,,,
-,,,,,,
 #,CPT Code,Insurance Company,Physician Name,Payment Amount,Balance,Denial Reason
 1,99213,Medicare,Dr. Smith,$0.00,$100.00,16 - Missing information
 2,99214,Aetna,Dr. Johnson,$80.00,$20.00,

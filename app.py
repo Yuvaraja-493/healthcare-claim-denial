@@ -1,98 +1,56 @@
 import streamlit as st
 import pandas as pd
-import os
-from sklearn.ensemble import RandomForestClassifier
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-st.set_page_config(page_title="Healthcare Claim Denial Prediction", layout="wide")
+st.set_page_config(page_title="Healthcare Claim Denial Prediction App", layout="wide")
+
 st.title("🏥 Healthcare Claim Denial Prediction App")
+st.write("Upload a CSV with CPT codes, insurance info, payments, balances, and denial reasons.")
 
-# =======================
-# Utility to clean data
-# =======================
-def clean_data(df):
-    # Drop unnamed columns
-    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
-    if "#" in df.columns:
-        df = df.drop(columns=["#"])
+uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
-    # Clean numeric columns
+if uploaded_file:
+    # 🔥 Auto-clean CSV
+    df = pd.read_csv(uploaded_file, skip_blank_lines=True)
+    df = df.dropna(how="all")  # drop fully blank rows
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]  # drop unnamed index columns
+
+    # Rename columns if they have extra spaces
+    df.columns = df.columns.str.strip()
+
+    # Clean currency fields
     for col in ["Payment Amount", "Balance"]:
         if col in df.columns:
-            df[col] = df[col].replace("[\$,]", "", regex=True).astype(float)
-    return df
+            df[col] = df[col].replace(r"[\$,]", "", regex=True).astype(float)
 
+    # Create Denial column
+    if "Denial" not in df.columns and "Denial Reason" in df.columns:
+        df["Denial"] = df["Denial Reason"].apply(
+            lambda x: 1 if pd.notnull(x) and str(x).strip() != "" else 0
+        )
 
-# =======================
-# Load training data
-# =======================
-claims_path = os.path.join("data", "claims.csv")
-
-if os.path.exists(claims_path):
-    df = pd.read_csv(claims_path, header=1, encoding="latin1")  # use 2nd row as header
-    df = clean_data(df)
-
-    st.subheader("📂 Training Data Preview")
+    # ✅ Show preview
+    st.subheader("📂 Raw Data Preview")
     st.dataframe(df.head())
 
-    if "Denial" in df.columns:
-        # Prepare features and target
-        X = df.drop("Denial", axis=1)
-        y = df["Denial"]
-
-        # Train model
-        model = RandomForestClassifier(random_state=42)
-        model.fit(X, y)
-        st.success("✅ Model trained successfully!")
-
-        # =======================
-        # Denial Analysis
-        # =======================
-        st.subheader("📊 Denial Analysis")
-        for col in ["CPT Code", "Insurance Company", "Physician Name"]:
-            if col in df.columns:
-                denial_rates = (
-                    df.groupby(col)["Denial"]
-                    .mean()
-                    .reset_index()
-                    .rename(columns={"Denial": "Denial Rate"})
-                )
-                st.write(f"**Denial Rate by {col}:**")
-                st.dataframe(denial_rates)
-
-        # =======================
-        # Prediction Section
-        # =======================
-        st.subheader("🔮 Predict Denials on New Data")
-        new_file = st.file_uploader("Upload new claims CSV or Excel file", type=["csv", "xlsx"])
-
-        if new_file:
-            if new_file.name.endswith(".csv"):
-                new_df = pd.read_csv(new_file, header=1)
-            else:
-                new_df = pd.read_excel(new_file, header=1)
-
-            new_df = clean_data(new_df)
-            st.subheader("📂 New Claims Data Preview")
-            st.dataframe(new_df.head())
-
-            # Predict
-            predictions = model.predict(new_df)
-            new_df["Predicted Denial"] = predictions
-
-            st.subheader("📊 Prediction Results")
-            st.dataframe(new_df)
-
-            # Download
-            csv = new_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "⬇️ Download Predictions as CSV",
-                csv,
-                "predicted_claims.csv",
-                "text/csv",
-                key="download-csv",
-            )
-
+    if "Denial" not in df.columns:
+        st.error("❌ No 'Denial' or 'Denial Reason' column found in the file!")
     else:
-        st.error("❌ 'Denial' column not found in data. Please include it in training dataset.")
+        st.success("✅ Data loaded successfully!")
+
+        # 📊 Top CPT Codes
+        denial_summary = df.groupby("CPT Code")["Denial"].sum().sort_values(ascending=False)
+
+        st.subheader("📊 Top CPT Codes by Denial Frequency")
+        st.dataframe(denial_summary)
+
+        fig, ax = plt.subplots(figsize=(10, 5))
+        sns.barplot(x=denial_summary.index, y=denial_summary.values, ax=ax, palette="coolwarm")
+        plt.xticks(rotation=45)
+        plt.title("Top CPT Codes by Denial Count")
+        plt.ylabel("Denial Count")
+        plt.xlabel("CPT Code")
+        st.pyplot(fig)
 else:
-    st.error("❌ Could not find data/claims.csv. Please check the path.")
+    st.info("📥 Please upload a CSV file to get started.")
