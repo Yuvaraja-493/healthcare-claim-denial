@@ -32,7 +32,9 @@ if os.path.exists(claims_path):
 
     # Create binary target column from Denial Reason
     if "Denial Reason" in df.columns:
-        df["Denial"] = df["Denial Reason"].notna().astype(int)
+        df["Denial"] = df["Denial Reason"].fillna("").apply(
+            lambda x: 1 if str(x).strip() != "" else 0
+        )
 
     st.subheader("📂 Training Data Preview")
     st.dataframe(df.head())
