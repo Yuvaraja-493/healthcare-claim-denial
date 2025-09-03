@@ -12,8 +12,8 @@ st.title("🏥 Healthcare Claim Denial Prediction App")
 claims_path = os.path.join("data", "claims.csv")
 
 if os.path.exists(claims_path):
-    # Skip the first junk row, use 2nd row as header
-    df = pd.read_csv(claims_path, encoding="latin1", skiprows=1)
+    # Skip first junk row, use 2nd row as header
+    df = pd.read_csv(claims_path, encoding="latin1", skiprows=1, header=0)
 
     # Drop unnamed or irrelevant columns
     df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
@@ -76,7 +76,7 @@ if os.path.exists(claims_path):
         new_file = st.file_uploader("Upload new claims CSV file", type=["csv"])
 
         if new_file:
-            new_df = pd.read_csv(new_file, skiprows=1)
+            new_df = pd.read_csv(new_file, skiprows=1, header=0)
             new_df = new_df.loc[:, ~new_df.columns.str.contains("^Unnamed")]
             if "#" in new_df.columns:
                 new_df = new_df.drop(columns=["#"])
