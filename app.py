@@ -15,20 +15,24 @@ if os.path.exists(claims_path):
     # Skip the first junk row, use 2nd row as header
     df = pd.read_csv(claims_path, encoding="latin1", skiprows=1)
 
-    # Drop unnamed or irrelevant columns (like '#' if present)
+    # Drop unnamed or irrelevant columns
     df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
     if "#" in df.columns:
         df = df.drop(columns=["#"])
 
-    # Clean up currency columns (remove $ and convert to float)
+    # Clean up currency columns
     if "Payment Amount" in df.columns:
         df["Payment Amount"] = (
-            df["Payment Amount"].replace("[\$,]", "", regex=True).astype(float)
+            df["Payment Amount"].replace(r"[\$,]", "", regex=True).astype(float)
         )
     if "Balance" in df.columns:
         df["Balance"] = (
-            df["Balance"].replace("[\$,]", "", regex=True).astype(float)
+            df["Balance"].replace(r"[\$,]", "", regex=True).astype(float)
         )
+
+    # Create binary target column from Denial Reason
+    if "Denial Reason" in df.columns:
+        df["Denial"] = df["Denial Reason"].notna().astype(int)
 
     st.subheader("📂 Training Data Preview")
     st.dataframe(df.head())
@@ -39,6 +43,9 @@ if os.path.exists(claims_path):
     if "Denial" in df.columns:
         X = df.drop("Denial", axis=1)
         y = df["Denial"]
+
+        # Convert categorical columns to numeric
+        X = pd.get_dummies(X)
 
         # Train model
         model = RandomForestClassifier(random_state=42)
@@ -74,18 +81,22 @@ if os.path.exists(claims_path):
 
             if "Payment Amount" in new_df.columns:
                 new_df["Payment Amount"] = (
-                    new_df["Payment Amount"].replace("[\$,]", "", regex=True).astype(float)
+                    new_df["Payment Amount"].replace(r"[\$,]", "", regex=True).astype(float)
                 )
             if "Balance" in new_df.columns:
                 new_df["Balance"] = (
-                    new_df["Balance"].replace("[\$,]", "", regex=True).astype(float)
+                    new_df["Balance"].replace(r"[\$,]", "", regex=True).astype(float)
                 )
 
             st.subheader("📂 New Claims Data Preview")
             st.dataframe(new_df.head())
 
+            # Ensure same features as training
+            new_df_encoded = pd.get_dummies(new_df)
+            new_df_encoded = new_df_encoded.reindex(columns=X.columns, fill_value=0)
+
             # Predict
-            predictions = model.predict(new_df)
+            predictions = model.predict(new_df_encoded)
             new_df["Predicted Denial"] = predictions
 
             st.subheader("📊 Prediction Results")
@@ -102,7 +113,7 @@ if os.path.exists(claims_path):
             )
 
     else:
-        st.error("❌ 'Denial' column not found in data. Please include it in training dataset.")
+        st.error("❌ Could not find target column ('Denial'). Please check dataset.")
 
 else:
     st.error("❌ Could not find data/claims.csv. Please check the path.")
