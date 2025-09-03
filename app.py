@@ -1,108 +1,80 @@
+# app.py
 import streamlit as st
 import pandas as pd
-import os
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report
 
-st.set_page_config(page_title="Healthcare Claim Denial Prediction", layout="wide")
-st.title("🏥 Healthcare Claim Denial Prediction App")
+# ------------------------------
+# Load dataset
+# ------------------------------
+@st.cache_data
+def load_data(file_path):
+    try:
+        df = pd.read_csv(file_path)
+        return df
+    except Exception as e:
+        st.error(f"Error loading CSV: {e}")
+        return None
 
-# ========================
-# Load Training Data
-# ========================
-claims_path = os.path.join("data", "claims.csv")
+# ------------------------------
+# Clean monetary columns
+# ------------------------------
+def clean_currency_columns(df, columns):
+    for col in columns:
+        if col in df.columns:
+            df[col] = df[col].replace(r"[\$,]", "", regex=True).astype(float)
+    return df
 
-if os.path.exists(claims_path):
-    # Skip the first junk row, use 2nd row as header
-    df = pd.read_csv(claims_path, encoding="latin1", skiprows=1)
+# ------------------------------
+# Convert Denial Reason to binary target
+# ------------------------------
+def encode_target(df):
+    df["Denial"] = df["Denial Reason"].apply(lambda x: 0 if pd.isna(x) or str(x).strip() == "" else 1)
+    return df
 
-    # Drop unnamed or irrelevant columns (like '#' if present)
-    df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
-    if "#" in df.columns:
-        df = df.drop(columns=["#"])
+# ------------------------------
+# Main App
+# ------------------------------
+st.title("Healthcare Claim Denial Prediction App")
 
-    # Clean up currency columns (remove $ and convert to float)
-    if "Payment Amount" in df.columns:
-        df["Payment Amount"] = (
-            df["Payment Amount"].replace("[\$,]", "", regex=True).astype(float)
-        )
-    if "Balance" in df.columns:
-        df["Balance"] = (
-            df["Balance"].replace("[\$,]", "", regex=True).astype(float)
-        )
+uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+if uploaded_file:
+    df = load_data(uploaded_file)
 
-    st.subheader("📂 Training Data Preview")
-    st.dataframe(df.head())
+    if df is not None:
+        st.subheader("Raw Data Preview")
+        st.dataframe(df.head())
 
-    # ========================
-    # Split into features & target
-    # ========================
-    if "Denial" in df.columns:
-        X = df.drop("Denial", axis=1)
-        y = df["Denial"]
+        required_columns = ["Payment Amount", "Balance", "Denial Reason"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            st.error(f"Missing required columns: {missing_columns}")
+        else:
+            df = clean_currency_columns(df, ["Payment Amount", "Balance"])
+            df = encode_target(df)
 
-        # Train model
-        model = RandomForestClassifier(random_state=42)
-        model.fit(X, y)
+            st.subheader("Processed Data Preview")
+            st.dataframe(df.head())
 
-        st.success("✅ Model trained successfully on data/claims.csv")
+            # Features & target
+            X = df[["Payment Amount", "Balance"]]
+            y = df["Denial"]
 
-        # ========================
-        # Denial Analysis
-        # ========================
-        st.subheader("📊 Denial Analysis")
+            # Split
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        for col in ["CPT Code", "Insurance Company", "Physician Name"]:
-            if col in df.columns:
-                st.write(
-                    df.groupby(col)["Denial"].mean().reset_index().rename(
-                        columns={"Denial": "Denial Rate"}
-                    )
-                )
+            # Model
+            model = RandomForestClassifier(n_estimators=100, random_state=42)
+            model.fit(X_train, y_train)
 
-        # ========================
-        # Prediction Section
-        # ========================
-        st.subheader("🔮 Predict Denials on New Data")
+            st.success("Model trained!")
 
-        new_file = st.file_uploader("Upload new claims CSV file", type=["csv"])
+            # Predictions
+            y_pred = model.predict(X_test)
 
-        if new_file:
-            new_df = pd.read_csv(new_file, skiprows=1)
-            new_df = new_df.loc[:, ~new_df.columns.str.contains("^Unnamed")]
-            if "#" in new_df.columns:
-                new_df = new_df.drop(columns=["#"])
-
-            if "Payment Amount" in new_df.columns:
-                new_df["Payment Amount"] = (
-                    new_df["Payment Amount"].replace("[\$,]", "", regex=True).astype(float)
-                )
-            if "Balance" in new_df.columns:
-                new_df["Balance"] = (
-                    new_df["Balance"].replace("[\$,]", "", regex=True).astype(float)
-                )
-
-            st.subheader("📂 New Claims Data Preview")
-            st.dataframe(new_df.head())
-
-            # Predict
-            predictions = model.predict(new_df)
-            new_df["Predicted Denial"] = predictions
-
-            st.subheader("📊 Prediction Results")
-            st.dataframe(new_df)
-
-            # Option to download results
-            csv = new_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "⬇️ Download Predictions as CSV",
-                csv,
-                "predicted_claims.csv",
-                "text/csv",
-                key="download-csv",
-            )
-
-    else:
-        st.error("❌ 'Denial' column not found in data. Please include it in training dataset.")
-
+            st.subheader("Classification Report")
+            st.text(classification_report(y_test, y_pred))
 else:
-    st.error("❌ Could not find data/claims.csv. Please check the path.")
+    st.info("Please upload a CSV file to get started.")
