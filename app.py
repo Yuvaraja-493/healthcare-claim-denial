@@ -13,8 +13,8 @@ from sklearn.metrics import classification_report
 def load_data():
     claims_path = "data/claims.csv"
 
-    # Use header=1 because first row is empty, second row has column names
-    df = pd.read_csv(claims_path, encoding="latin1", header=1)
+    # Skip first 2 rows (junk + repeated headers)
+    df = pd.read_csv(claims_path, encoding="latin1", skiprows=2)
 
     # Clean dataset
     df = df.dropna(how="all")  # remove fully empty rows
@@ -39,13 +39,19 @@ def train_model(df):
     # Convert target into binary classification: Denied vs Not Denied
     df["Denied"] = df["Denial Reason"].notna().astype(int)
 
-    # Use a simple feature (CPT Code + Insurance + Physician) for demo
-    df["features"] = df["CPT Code"].astype(str) + " " + df["Insurance Company"].astype(str) + " " + df["Physician Name"].astype(str)
+    # Use simple features for demo
+    df["features"] = (
+        df["CPT Code"].astype(str) + " "
+        + df["Insurance Company"].astype(str) + " "
+        + df["Physician Name"].astype(str)
+    )
 
     X = df["features"]
     y = df["Denied"]
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
     pipeline = Pipeline([
         ("tfidf", TfidfVectorizer()),
